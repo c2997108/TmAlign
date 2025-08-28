@@ -9,23 +9,23 @@ TmAlign — Local Duplex Stability Search
 
 必要要件
 - Python 3.8+
-- リポジトリ内の `Santalucia_NN_Tm.py`（サンタルチア最近接モデル）を内部で読み込みます。追加インストールは不要です。
+- リポジトリ内の `Santalucia_NN_Tm.py`（サンタルチア最近接モデル）[ThermoAlign](https://github.com/drmaize/ThermoAlign)より
 
 基本的な使い方
 - 最小実行例:
-  - `python3 TmAlign.py --fasta test.fa --k 4`
+  - `python3 TmAlign.py --query CGCCTGTTTATCAAAAACAT --fasta test.fa --k 4`
 - 並列実行（CPU数に合わせ自動）:
-  - `python3 TmAlign.py --fasta test.fa --k 4 --workers 0`
+  - `python3 TmAlign.py --query CGCCTGTTTATCAAAAACAT --fasta test.fa --k 4 --cpus 0`
 - しきい値を調整（低い Tm も出力、同一率 60%以上）:
-  - `python3 TmAlign.py --fasta test.fa --k 4 --min-tm 0 --min-identity 60 --workers 4`
+  - `python3 TmAlign.py --query CGCCTGTTTATCAAAAACAT --fasta test.fa --k 4 --min-tm 0 --min-identity 60 --cpus 4`
 
 オプション
-- `--fasta`: 入力 FASTA ファイルパス（デフォルト: `test.fa`）
-- `--query`: クエリ配列（デフォルト: `CGCCTGTTTATCAAAAACAT`）
+- `--fasta`: 入力 FASTA ファイルパス
+- `--query`: クエリ配列
 - `--k`: k-mer 長（デフォルト: 4）
 - `--min-tm`: 出力する最小 Tm（°C、デフォルト: 30.0）
 - `--min-identity`: 出力する最小一致率（% 、デフォルト: 50.0）
-- `--workers`: 並列プロセス数。`0`=CPU数、`1`=並列なし、`2+`=明示した数（デフォルト: 0）
+- `--cpus`: 並列プロセス数。`0`=CPU数、`1`=並列なし、`2+`=明示した数（デフォルト: 0）
 
 出力形式（タブ区切り）
 - 列: `Tm  contig  start  end  strand  identity(%)  query_align  db_align`
@@ -52,9 +52,4 @@ TmAlign — Local Duplex Stability Search
 
 例
 - 高感度探索（Tm しきい値をゼロ、同一率 55%以上、8 並列）
-  - `python3 TmAlign.py --fasta your.fa --query ACGT... --k 5 --min-tm 0 --min-identity 55 --workers 8`
-- 低並列・順次処理（デバッグ向け）
-  - `python3 TmAlign.py --fasta your.fa --k 4 --workers 1`
-
-補足
-- リポジトリには Go 実装（`thermodp/`）も含まれますが、本 README は Python 版 `TmAlign.py` の説明です。
+  - `python3 TmAlign.py --fasta your.fa --query ACGT... --k 3 --min-tm 0 --min-identity 40`
