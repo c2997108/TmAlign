@@ -14,8 +14,6 @@ TmAlign — Local Duplex Stability Search
 基本的な使い方
 - 最小実行例:
   - `python3 TmAlign.py --query CGCCTGTTTATCAAAAACAT --fasta test.fa --k 4`
-- 並列実行（CPU数に合わせ自動）:
-  - `python3 TmAlign.py --query CGCCTGTTTATCAAAAACAT --fasta test.fa --k 4 --cpus 0`
 - しきい値を調整（低い Tm も出力、同一率 60%以上）:
   - `python3 TmAlign.py --query CGCCTGTTTATCAAAAACAT --fasta test.fa --k 4 --min-tm 0 --min-identity 60 --cpus 4`
 
