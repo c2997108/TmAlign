@@ -102,9 +102,16 @@ TmAlign — Local Duplex Stability Search
 例
 - 付属のサンプルで実行:
   - `python3 TmBLAST.py --fasta test-mito.fa --queries-file test-primer.fa --k 4 --min-tm 0 --min-identity 40`
-  - 出力例（先頭数行）:
+ - 出力例（先頭数行）:
 ```
 MiFish-F	GTCGGTAAAACTCGTGCCAGC	63.29	gi|NC_000860.1|ref|NC_000860.1|tax|8038|Salvelinus	293	313	+	95.2	GTCGGTAAAACTCGTGCCAGC	GCCGGTAAAACTCGTGCCAGC
 MiFish-F	GTCGGTAAAACTCGTGCCAGC	53.49	gi|NC_000860.1|ref|NC_000860.1|tax|8038|Salvelinus	294	313	+	90.5	GTCGGTAAAACTCGTGCCAGC	-CCGGTAAAACTCGTGCCAGC
 MiFish-R	CATAGTGGGGTATCTAATCCCAGTTTG	66.49	gi|NC_000860.1|ref|NC_000860.1|tax|8038|Salvelinus	484	510	-	100.0	CAAACTGGGATTAGATACCCCACTATG	CAAACTGGGATTAGATACCCCACTATG
 ```
+
+## Web アプリ版
+
+- ルートにある `index.html` をブラウザで開くと、ブラウザ内で TmBLAST を実行できます。
+- 参照 FASTA とクエリ（FASTA もしくは 1 行 1 クエリ/TSV）を読み込んで「Run TmBLAST」をクリックしてください。
+- モジュール不要のバンドル (`web/app.bundle.js`) を読み込むため、ファイルを直接開いても動作します。うまく動かない場合は簡易サーバで提供してください。
+  - 例: `python3 -m http.server` で起動し、`http://localhost:8000/` にアクセス。

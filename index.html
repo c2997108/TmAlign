@@ -1,0 +1,416 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TmBLAST (Web)</title>
+    <style>
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 16px; }
+      header { margin-bottom: 12px; }
+      h1 { font-size: 20px; margin: 0 0 8px; }
+      .row { display: flex; gap: 12px; flex-wrap: wrap; }
+      .col { flex: 1 1 420px; min-width: 320px; }
+      textarea { width: 100%; min-height: 180px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
+      input[type="number"], input[type="text"] { width: 120px; }
+      .controls { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
+      .inline { display: inline-flex; align-items: center; gap: 6px; }
+      .small { font-size: 12px; color: #555; }
+      .actions { margin: 8px 0; display: flex; gap: 8px; }
+      button { padding: 6px 12px; }
+      .output { white-space: pre; background: #fafafa; border: 1px solid #ddd; padding: 8px; min-height: 180px; overflow: auto; }
+      .note { color: #666; }
+      label { font-weight: 600; }
+      .tooltip { position: fixed; pointer-events: none; background: #fff; color: #111; border: 1px solid #ccc; box-shadow: 0 2px 6px rgba(0,0,0,0.12); padding: 6px 8px; border-radius: 4px; font-size: 12px; max-width: 520px; z-index: 9999; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>TmBLAST (ブラウザ版)</h1>
+      <div class="note">FASTA をブラウザに読み込み、IUPAC 縮重クエリを展開して Tm ベースで探索します（近似 NN モデル）。</div>
+    </header>
+
+    <div class="row">
+      <div class="col">
+        <label>クエリ（プライマーFASTA）</label>
+        <div class="controls">
+          <input type="file" id="queryFile" accept=".fa,.fasta,.txt" />
+          <button id="queryExampleBtn" type="button">example</button>
+          <span class="small">または下のテキストに貼り付け</span>
+        </div>
+        <textarea id="queryText" placeholder=">MiFish-F\nGTCGGTAAAACTCGTGCCAGC\n"></textarea>
+      </div>
+      <div class="col">
+        <label>ゲノムFASTA</label>
+        <div class="controls">
+          <input type="file" id="fastaFile" accept=".fa,.fasta,.fna,.ffn,.txt" />
+          <button id="fastaExampleBtn" type="button">example</button>
+          <span class="small">または下のテキストに貼り付け</span>
+        </div>
+        <textarea id="fastaText" placeholder=">chr1\nACGT...\n"></textarea>
+      </div>
+    </div>
+
+    <div class="controls">
+      <div class="inline"><label for="k">k</label><input id="k" type="number" value="4" min="1" /></div>
+      <div class="inline"><label for="minTm">min Tm</label><input id="minTm" type="number" value="30" step="0.1" /></div>
+      <div class="inline"><label for="minId">min identity %</label><input id="minId" type="number" value="50" step="0.1" /></div>
+      <div class="inline"><label for="maxExp">max expansions</label><input id="maxExp" type="number" value="100000" /></div>
+    </div>
+
+    <div class="controls">
+      <div class="inline"><label for="primerConc">primer conc (nM)</label><input id="primerConc" type="number" value="100" step="1" /></div>
+      <div class="inline"><label for="Na">Na (mM)</label><input id="Na" type="number" value="0" step="0.1" /></div>
+      <div class="inline"><label for="K">K (mM)</label><input id="K" type="number" value="50" step="0.1" /></div>
+      <div class="inline"><label for="Tris">Tris (mM)</label><input id="Tris" type="number" value="10" step="0.1" /></div>
+      <div class="inline"><label for="Mg">Mg (mM)</label><input id="Mg" type="number" value="1.5" step="0.1" /></div>
+      <div class="inline"><label for="dNTPs">dNTPs (mM)</label><input id="dNTPs" type="number" value="0.2" step="0.1" /></div>
+    </div>
+
+    <div class="actions">
+      <button id="runBtn">Run TmBLAST</button>
+      <button id="clearBtn">Clear</button>
+    </div>
+
+    <h2 style="margin-top:16px; font-size:18px;">アライメント概要</h2>
+    <div class="small note">NCBI BLAST 風の概要図。各参照エントリを横棒で示し、ヒット位置を色付きバーで表示します（色: クエリID、端の三角: ストランド。+ は右端に右向き、- は左端に左向き）。</div>
+    <div id="overview"></div>
+
+    <h2 style="margin-top:16px; font-size:18px;">RAW 出力</h2>
+    <div class="small">出力: <code>query_id\texpanded_query\tTm\tcontig\tstart\tend\tstrand\tidentity\tquery_align\tdb_align</code></div>
+    <div id="output" class="output"></div>
+
+    <script src="./web/app.bundle.js"></script>
+    <script>
+
+      const $ = (id) => document.getElementById(id);
+
+      function readFileInto(elFile, elText) {
+        elFile.addEventListener('change', async () => {
+          const f = elFile.files?.[0];
+          if (!f) return;
+          const txt = await f.text();
+          elText.value = txt;
+        });
+      }
+
+      readFileInto($("fastaFile"), $("fastaText"));
+      readFileInto($("queryFile"), $("queryText"));
+
+      // Example buttons populate sample inputs
+      $("queryExampleBtn").addEventListener('click', () => {
+        const sample = `>MiFish-F\nGTCGGTAAAACTCGTGCCAGC\n>MiFish-R\nCATAGTGGGGTATCTAATCCCAGTTTG\n`;
+        $("queryText").value = sample;
+        if ($("queryFile")) $("queryFile").value = '';
+      });
+      $("fastaExampleBtn").addEventListener('click', () => {
+        const sample = `>Plecoglossus_altivelis\nGCTAGCGTAGCTTAATCAAAGCAAAACACTGAAGATGTTTAGATGGGCGTTGAAAAACCCCGCAAGCACAAAGGCTTGGTCCTGACTTTACTTTCAGCTCAAACCAAATTTATACATGCAAGTCTCCGCACCCCCGTGAGGATGCCCTTTACCCCCTGCCCGGGGGCAAGGAGCTGGTATCAGGCACGCCCACCGCAGCCCAAGACGCCTTGTTTAGCCACACCCCCAAGGGTATTCAGCAGTGATAGACATTAAGCAATAAGCGAAAGCTTGACTAGGTTACGGTTTTTAGGGCCGGTTAATCTCGTGCCAGCCACCGCGGTTATACGAGTGGCCCAAGTTGAAAGTTACCGGCGTAAAGAGTGGTTAGGGAAACAAAAAACTAAAGCCGAACACCCTCCAGGCCGTTATACGCTTCTGAGGGCACGAAGCTCCACTACGAAAGTGGCTTTAACACACCTGAACCCACGACAACTAAGATACAAACTGGGATTAGATACCCCACTATGCTTAGCCGTAAACTTTGATATTAACTCACCCCTAATATCCGCCAGGGGACTACAAGCGTTAGCTTAAAACCCAAAGGACTTGGCGGTGCCTCATACCCACCTAGAGGAGCCTGTTCTTGAATCGATAATCCCCGTTCAACCTCACCACCCCTTGCTCGACCCGCCTATATACCGCCGTCGTCAGCTCACCCTGTGAAGGACTTAAAGTGAGCAAAATGGGCAAAGCCCAAAACGTCAGGTCAAGGTGCAGCGTATGGGGTGGGAAGAAATGGGCTACATTACCTAACTCAGGTCATTACGGAGGGAGCTGTGAAACCAGTTCTTGAAGGTGGATTTAGCAGTAAGGGGAAAATAGAGAGTTCCTCTGAAGCCGGCTCTGAGGCGCGCACATACCGCCCGTCACTCTCTCCAGGTTCACTTTCTTTGGTTCTTAACAAGATTTCCGAACAAAGGGGAGGCAAGTCGTAACATGGTAAGTGTACCGGAAGGTGCACTTGGGACAACCGGGGCGTAGCTAAATAGCACAGCATCTCCCTTACTCTGAGAAGACACCCGTGCAAATCGGGTCGCCCTGAGCTAACTAGCTAGCCAAACACCTGGACTAATTTTACATTATAAATATTCCCTCACAACCTGACAACTTGTGAACAAATCATTTTTCCACCTGAGTAC\n`;
+        $("fastaText").value = sample;
+        if ($("fastaFile")) $("fastaFile").value = '';
+      });
+
+      $("clearBtn").addEventListener('click', () => {
+        $("output").textContent = '';
+      });
+
+      $("runBtn").addEventListener('click', () => {
+        const fastaTxt = $("fastaText").value.trim();
+        const queryTxt = $("queryText").value.trim();
+        if (!fastaTxt || !queryTxt) {
+          alert('FASTA とクエリを入力してください');
+          return;
+        }
+
+        const k = Number($("k").value);
+        const minTm = Number($("minTm").value);
+        const minId = Number($("minId").value);
+        const maxExp = Number($("maxExp").value);
+        const opts = {
+          primerConc: Number($("primerConc").value),
+          Na: Number($("Na").value),
+          K: Number($("K").value),
+          Tris: Number($("Tris").value),
+          Mg: Number($("Mg").value),
+          dNTPs: Number($("dNTPs").value),
+        };
+
+        const records = window.TmBLAST.parseFastaOrRaw(fastaTxt, 'genome1');
+        const queries = window.TmBLAST.parseQueries(queryTxt);
+        if (!records.length) {
+          alert('ゲノムFASTAが空、または認識できません (FASTA か ACGTN のみの配列1本)');
+          return;
+        }
+        if (!queries.length) {
+          alert('クエリ（プライマーFASTA）が空、または認識できません');
+          return;
+        }
+        const lines = window.TmBLAST.tmblast(records, queries, k, minTm, minId, maxExp, opts);
+        $("output").textContent = lines.join('\n');
+
+        // Draw overview
+        const rows = window.TmBLAST.tmblastRows(records, queries, k, minTm, minId, maxExp, opts);
+        drawOverview(records, rows);
+      });
+
+      function drawOverview(records, rows) {
+        const container = $("overview");
+        container.innerHTML = '';
+        const width = Math.max(900, Math.min(window.innerWidth - 80, 1400));
+        const labelW = 260; // left label area
+        const baseTrackH = 14; // baseline height
+        const laneH = 8; // hit lane height
+        const laneGap = 2;
+        const rowGap = 8; // between records
+        const pad = 10;
+        const uniqQ = Array.from(new Set(rows.map(r => r.qid)));
+        const colorForQ = (qid) => {
+          const i = uniqQ.indexOf(qid);
+          const hue = (i * 67) % 360;
+          return `hsl(${hue},70%,45%)`;
+        };
+        const svgNS = 'http://www.w3.org/2000/svg';
+        const svg = document.createElementNS(svgNS, 'svg');
+        // Compute per-record lanes to avoid overlap
+        const recInfo = records.map(([name, seq]) => {
+          const hits = rows.filter(r => r.name === name)
+                           .sort((a,b)=> a.start - b.start || a.end - b.end);
+          const lanes = []; // array of last end per lane
+          for (const h of hits) {
+            let lane = 0;
+            while (lane < lanes.length && h.start <= lanes[lane]) lane++;
+            if (lane === lanes.length) lanes.push(0);
+            lanes[lane] = h.end;
+            h._lane = lane; // annotate
+          }
+          const laneCount = Math.max(1, lanes.length);
+          const trackH = baseTrackH + (laneCount > 0 ? 2 + laneCount * (laneH + laneGap) : 0);
+          return { name, len: seq.length, laneCount, trackH };
+        });
+        const totalHeight = recInfo.reduce((acc, r) => acc + r.trackH + rowGap, pad + 40) + pad;
+        const height = totalHeight;
+        svg.setAttribute('width', String(width));
+        svg.setAttribute('height', String(height));
+
+        // Legend
+        let lx = labelW, ly = 6;
+        for (const qid of uniqQ) {
+          const g = document.createElementNS(svgNS, 'g');
+          const rect = document.createElementNS(svgNS, 'rect');
+          rect.setAttribute('x', String(lx));
+          rect.setAttribute('y', String(ly));
+          rect.setAttribute('width', '14');
+          rect.setAttribute('height', '10');
+          rect.setAttribute('fill', colorForQ(qid));
+          rect.setAttribute('opacity', '0.9');
+          const text = document.createElementNS(svgNS, 'text');
+          text.setAttribute('x', String(lx + 18));
+          text.setAttribute('y', String(ly + 9));
+          text.setAttribute('font-size', '12');
+          text.textContent = qid;
+          g.appendChild(rect); g.appendChild(text);
+          svg.appendChild(g);
+          lx += 18 + (qid.length * 7) + 18;
+        }
+
+        // Chart group for zoom/pan
+        const chartX = labelW;
+        const chartW = width - pad - 20 - chartX;
+        const gChart = document.createElementNS(svgNS, 'g');
+        gChart.setAttribute('transform', `translate(${chartX},0)`);
+        const gScene = document.createElementNS(svgNS, 'g');
+        gChart.appendChild(gScene);
+        const gAxis = document.createElementNS(svgNS, 'g');
+        gChart.appendChild(gAxis);
+        svg.appendChild(gChart);
+
+        let yCursor = pad + 24;
+        const recAxes = []; // store axis info per record for dynamic ticks
+        records.forEach(([name, seq], idx) => {
+          const info = recInfo[idx];
+          const y = yCursor;
+          yCursor += info.trackH + rowGap;
+          const g = document.createElementNS(svgNS, 'g');
+          // Label
+          const label = document.createElementNS(svgNS, 'text');
+          label.setAttribute('x', '4');
+          label.setAttribute('y', String(y + info.trackH - 2));
+          label.setAttribute('font-size', '12');
+          label.textContent = `${name}  (len=${seq.length})`;
+          g.appendChild(label);
+
+          // Baseline
+          const L = seq.length;
+          const scale = (pos1based) => ((pos1based - 1) / Math.max(1, L)) * chartW;
+          const basePix = chartW / Math.max(1, L);
+          const base = document.createElementNS(svgNS, 'rect');
+          base.setAttribute('x', String(0));
+          base.setAttribute('y', String(y));
+          base.setAttribute('width', String(chartW));
+          base.setAttribute('height', String(baseTrackH));
+          base.setAttribute('fill', '#eee');
+          base.setAttribute('stroke', '#bbb');
+          gScene.appendChild(base);
+
+          // Save axis row info for dynamic tick rendering
+          recAxes.push({ y, L });
+
+          // Hits (bar + end triangle to show strand; lanes avoid overlap)
+          const hits = rows.filter(r => r.name === name);
+          for (const h of hits) {
+            const lane = h._lane || 0;
+            const x = scale(h.start);
+            const w = Math.max(1, scale(h.end + 1) - scale(h.start));
+            const yHit = y + 2 + baseTrackH + lane * (laneH + laneGap);
+            // Triangle width: about 5 bases
+            const tWanted = 5 * basePix;
+            const fillColor = colorForQ(h.qid);
+            // Main bar
+            const bar = document.createElementNS(svgNS, 'rect');
+            bar.setAttribute('x', String(x));
+            bar.setAttribute('y', String(yHit));
+            bar.setAttribute('width', String(w));
+            bar.setAttribute('height', String(laneH));
+            bar.setAttribute('fill', fillColor);
+            bar.setAttribute('opacity', '1');
+            bar.setAttribute('stroke', 'none');
+            bar.setAttribute('shape-rendering', 'crispEdges');
+            bar.style.cursor = 'pointer';
+            bar.addEventListener('mouseenter', (ev) => showTooltip(h, ev));
+            bar.addEventListener('mousemove', (ev) => moveTooltip(ev));
+            bar.addEventListener('mouseleave', () => hideTooltip());
+            gScene.appendChild(bar);
+            // End triangle indicating strand (protruding outside the bar)
+            let triPoints;
+            if (h.strand === '+') {
+              const t = Math.min(tWanted, chartW - (x + w)); // clamp to right space
+              triPoints = `${x+w},${yHit} ${x+w+Math.max(2,t)},${yHit+laneH/2} ${x+w},${yHit+laneH}`;
+            } else {
+              const t = Math.min(tWanted, x); // clamp to left space
+              triPoints = `${x},${yHit} ${x-Math.max(2,t)},${yHit+laneH/2} ${x},${yHit+laneH}`;
+            }
+            const tri = document.createElementNS(svgNS, 'polygon');
+            tri.setAttribute('points', triPoints);
+            tri.setAttribute('fill', fillColor);
+            tri.setAttribute('opacity', '1');
+            tri.setAttribute('stroke', 'none');
+            tri.setAttribute('shape-rendering', 'crispEdges');
+            tri.style.cursor = 'pointer';
+            tri.addEventListener('mouseenter', (ev) => showTooltip(h, ev));
+            tri.addEventListener('mousemove', (ev) => moveTooltip(ev));
+            tri.addEventListener('mouseleave', () => hideTooltip());
+            gScene.appendChild(tri);
+          }
+          svg.appendChild(g);
+        });
+
+        container.appendChild(svg);
+
+        // Axis rendering (updates on zoom/pan)
+        function niceStep(min, max, maxTicks=6) {
+          const range = Math.max(1, max - min);
+          const rough = range / maxTicks;
+          const pow10 = Math.pow(10, Math.floor(Math.log10(rough)));
+          const cand = [1, 2, 5, 10];
+          let step = cand[cand.length - 1] * pow10;
+          for (const m of cand) { if (rough <= m * pow10) { step = m * pow10; break; } }
+          return Math.max(1, Math.round(step));
+        }
+        function renderAxes() {
+          while (gAxis.firstChild) gAxis.removeChild(gAxis.firstChild);
+          for (const { y, L } of recAxes) {
+            // visible domain range given current zoom
+            const px0 = (0 - zoom.x) / zoom.k;
+            const px1 = (chartW - zoom.x) / zoom.k;
+            let pMin = Math.floor((px0 / chartW) * L) + 1;
+            let pMax = Math.ceil((px1 / chartW) * L);
+            pMin = Math.max(1, Math.min(L, pMin));
+            pMax = Math.max(1, Math.min(L, pMax));
+            if (pMax < pMin) [pMin, pMax] = [pMax, pMin];
+            const step = niceStep(pMin, pMax, 6);
+            const start = Math.ceil(pMin / step) * step;
+            for (let p = start; p <= pMax; p += step) {
+              const pxScene = ((p - 1) / Math.max(1, L)) * chartW;
+              const xTick = zoom.x + zoom.k * pxScene;
+              // tick line
+              const line = document.createElementNS(svgNS, 'line');
+              line.setAttribute('x1', String(xTick));
+              line.setAttribute('y1', String(y));
+              line.setAttribute('x2', String(xTick));
+              line.setAttribute('y2', String(y - 4));
+              line.setAttribute('stroke', '#666');
+              line.setAttribute('stroke-width', '1');
+              gAxis.appendChild(line);
+              // tick label
+              const txt = document.createElementNS(svgNS, 'text');
+              txt.setAttribute('x', String(xTick + 2));
+              txt.setAttribute('y', String(y - 6));
+              txt.setAttribute('font-size', '10');
+              txt.textContent = String(p);
+              gAxis.appendChild(txt);
+            }
+          }
+        }
+
+        // Tooltip helpers
+        let tooltipEl = document.getElementById('tmblast-tooltip');
+        if (!tooltipEl) {
+          tooltipEl = document.createElement('div');
+          tooltipEl.id = 'tmblast-tooltip';
+          tooltipEl.className = 'tooltip';
+          tooltipEl.style.display = 'none';
+          document.body.appendChild(tooltipEl);
+        }
+        function showTooltip(h, ev) {
+          tooltipEl.innerHTML = `<div><b>${h.qid}</b> (${h.strand}) — Tm ${h.tm.toFixed(2)}°C, ident ${h.ident.toFixed(1)}%</div>
+<div>${h.name}: ${h.start}–${h.end}</div>
+<div><span class="small">q:</span> <code>${escapeHtml(h.qalign)}</code></div>
+<div><span class="small">d:</span> <code>${escapeHtml(h.dbalign)}</code></div>`;
+          tooltipEl.style.display = 'block';
+          moveTooltip(ev);
+        }
+        function moveTooltip(ev) {
+          const x = ev.clientX + 14;
+          const y = ev.clientY + 14;
+          tooltipEl.style.left = x + 'px';
+          tooltipEl.style.top = y + 'px';
+        }
+        function hideTooltip() { tooltipEl.style.display = 'none'; }
+        function escapeHtml(s){ return String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+
+        // Zoom & pan on wheel and drag
+        const zoom = { k: 1, x: 0 };
+        const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+        svg.addEventListener('wheel', (ev) => {
+          ev.preventDefault();
+          const rect = svg.getBoundingClientRect();
+          const mx = ev.clientX - rect.left - chartX; // in chart coords
+          const wx = (mx - zoom.x) / zoom.k;
+          const factor = ev.deltaY < 0 ? 1.1 : 0.9;
+          const k2 = clamp(zoom.k * factor, 1, 100);
+          zoom.x = mx - wx * k2;
+          zoom.k = k2;
+          gScene.setAttribute('transform', `translate(${zoom.x},0) scale(${zoom.k},1)`);
+          renderAxes();
+        }, { passive: false });
+
+        let dragging = false; let lastX = 0;
+        svg.addEventListener('mousedown', (ev) => {
+          const rect = svg.getBoundingClientRect();
+          const mx = ev.clientX - rect.left - chartX;
+          if (mx >= 0 && mx <= chartW) {
+            dragging = true; lastX = mx;
+          }
+        });
+        svg.addEventListener('mousemove', (ev) => {
+          if (!dragging) return;
+          const rect = svg.getBoundingClientRect();
+          const mx = ev.clientX - rect.left - chartX;
+          const dx = mx - lastX; lastX = mx;
+          zoom.x += dx; gScene.setAttribute('transform', `translate(${zoom.x},0) scale(${zoom.k},1)`);
+          renderAxes();
+        });
+        window.addEventListener('mouseup', () => { dragging = false; });
+        renderAxes();
+      }
+    </script>
+  </body>
+  </html>
