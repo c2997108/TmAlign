@@ -69,4 +69,42 @@ TmAlign — Local Duplex Stability Search
 
 例
 - 高感度探索（Tm しきい値をゼロ、同一率 55%以上、8 並列）
-  - `python3 TmAlign.py --fasta your.fa --query ACGT... --k 3 --min-tm 0 --min-identity 40`
+ - `python3 TmAlign.py --fasta your.fa --query ACGT... --k 3 --min-tm 0 --min-identity 40`
+
+## TmBLAST — 複数クエリ + 縮重塩基対応
+
+概要
+- 複数のクエリ配列を一括で検索します（`--query` の複数指定、またはファイル入力）。
+- クエリ配列に含まれる IUPAC 縮重塩基（R,Y,S,W,K,M,B,D,H,V,N）を A/C/G/T の全組み合わせに展開して TmAlign ロジックで検索します。
+
+使い方
+- 単純な例（2 クエリを指定）
+  - `python3 TmBLAST.py --fasta target.fa --query ATGCRN --query TTYGGA --k 4`
+- クエリファイルから（FASTA もしくは1行1クエリ、任意で`id\tseq`）
+  - `python3 TmBLAST.py --fasta target.fa --queries-file queries.fa --k 4`
+
+主要オプション
+- `--fasta`: 参照 FASTA
+- `--query`: クエリ配列（複数回指定可、IUPAC 可）
+- `--queries-file`: クエリファイル（FASTA か、`id\tseq` または `seq` の行）
+- `--k`, `--min-tm`, `--min-identity`, `--cpus`: `TmAlign.py` と同じ意味
+- `--max-expansions`: 1 クエリあたりの展開上限（既定: 100000）
+
+出力形式（タブ区切り）
+- 列: `query_id  expanded_query  Tm  contig  start  end  strand  identity(%)  query_align  db_align`
+- `query_id`: クエリ名（FASTA ヘッダ、または `q1`, `q2`, ...）
+- `expanded_query`: 縮重展開後の A/C/G/T のみの配列
+
+注意
+- 縮重の展開は指数的に増大することがあります。既定では `--max-expansions` を超えると打ち切ります（標準エラーに警告）。
+- 出力は各展開クエリごとに DB ヒット（座標・向き・整列）で重複排除しています。
+
+例
+- 付属のサンプルで実行:
+  - `python3 TmBLAST.py --fasta test-mito.fa --queries-file test-primer.fa --k 4 --min-tm 0 --min-identity 40`
+  - 出力例（先頭数行）:
+```
+MiFish-F	GTCGGTAAAACTCGTGCCAGC	63.29	gi|NC_000860.1|ref|NC_000860.1|tax|8038|Salvelinus	293	313	+	95.2	GTCGGTAAAACTCGTGCCAGC	GCCGGTAAAACTCGTGCCAGC
+MiFish-F	GTCGGTAAAACTCGTGCCAGC	53.49	gi|NC_000860.1|ref|NC_000860.1|tax|8038|Salvelinus	294	313	+	90.5	GTCGGTAAAACTCGTGCCAGC	-CCGGTAAAACTCGTGCCAGC
+MiFish-R	CATAGTGGGGTATCTAATCCCAGTTTG	66.49	gi|NC_000860.1|ref|NC_000860.1|tax|8038|Salvelinus	484	510	-	100.0	CAAACTGGGATTAGATACCCCACTATG	CAAACTGGGATTAGATACCCCACTATG
+```
