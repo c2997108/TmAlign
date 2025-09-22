@@ -2,6 +2,8 @@
 
 TmAlign — Local Duplex Stability Search
 
+WEB版は[こちら](https://c2997108.github.io/TmAlign/)
+
 概要
 - クエリ配列内の各 k-mer ウィンドウを使って FASTA の各エントリを走査し、近傍の二本鎖安定性（Tm）を評価します。
 - 左右フランクで 1 塩基のバルジ（ギャップ）を許容し、固定ペナルティ（10°C）を適用します。
