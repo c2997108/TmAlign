@@ -43,7 +43,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument('--queries-file', help='File of queries (FASTA or lines).')
     p.add_argument('--k', type=int, default=4, help='k-mer window size (default: 4)')
     p.add_argument('--min-tm', type=float, default=30.0, help='Minimum Tm to report (default: 30.0)')
-    p.add_argument('--min-identity', type=float, default=50.0, help='Minimum identity percent (default: 50)')
+    p.add_argument('--min-identity', type=float, default=65.0, help='Minimum identity percent (default: 65)')
     p.add_argument('--cpus', type=int, default=0, help='CPU processes (0=all, 1=disable parallel)')
     p.add_argument('--max-expansions', type=int, default=100000, help='Guardrail for max expansions per query (default: 100000)')
     p.add_argument('--quiet', action='store_true', help='Suppress warnings to stderr')
