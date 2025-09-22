@@ -296,8 +296,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--min-identity",
         type=float,
-        default=50.0,
-        help="Minimum identity percent to report (default: 50)",
+        default=65.0,
+        help="Minimum identity percent to report (default: 65)",
     )
     p.add_argument(
         "--cpus",
